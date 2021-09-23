@@ -7,3 +7,5 @@ print (type (x))
 print (y)
 print (type (y))
 print (z)
+00000
+11111
