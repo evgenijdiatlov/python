@@ -32,6 +32,7 @@
 # print('gsfhgjkjhgk'.upper())
 
 print(10!=11)
+print (10 > 12)
 
 
 
