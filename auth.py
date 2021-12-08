@@ -1,118 +1,81 @@
-# from flask import Flask, jsonify, abort, request, make_response
-
-# app = Flask(__name__)
-
-# tasks = [
-#     {
-#         'id': 1,
-#         'title': u'Buy groceries',
-#         'description': u'Milk, Cheese, Pizza, Fruit, Tylenol', 
-#         'done': False
-#     },
-#     {
-#         'id': 2,
-#         'title': u'Learn Python',
-#         'description': u'Need to find a good Python tutorial on the web', 
-#         'done': False
-#     }
-# ]
-
-# @app.errorhandler(404)
-# def error404(error):
-#     return make_response(jsonify({'error': 'Not found'}), 404)
-
-# @app.route('/todo/api/v1.0/tasks', methods=['GET'])
-# def get_tasks():
-#     return jsonify({'tasks': tasks})
-
-# @app.route('/todo/api/v1.0/tasks/<int:task_id>', methods=['GET'])
-# def get_task_by_id(task_id):
-#     valid_task = [task for task in tasks if task['id'] == task_id]
-#     if len(valid_task) == 0:
-#         abort(404)
-#     return jsonify({'tasks': valid_task})
-
-# if __name__ == '__main__':
-#     app.run(debug=True)
-    
-from flask import Flask, json, jsonify, abort, request, make_response
-from flask_sqlalchemy import SQLAlchemy
+from flask import request, session, redirect, render_template
+from datetime import datetime
+import hashlib
+from auth_password import app, db
 
 
-app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///some.db'
-db = SQLAlchemy(app)
+class Authorization(db.Model):
+    id_user = db.Column(db.Integer, primary_key=True)
+    login_user = db.Column(db.String(20), unique=True)
+    password_user = db.Column(db.String)
+    time_registration = db.Column(db.DateTime)
 
-
-tasks = [
-    {
-        'id': 1,
-        'title': u'Buy groceries',
-        'description': u'Milk, Cheese, Pizza, Fruit, Tylenol', 
-        'done': False
-    },
-    {
-        'id': 2,
-        'title': u'Learn Python',
-        'description': u'Need to find a good Python tutorial on the web', 
-        'done': False
-    }
-]
-
-
-@app.errorhandler(404)
-def error404(error):
-    return make_response(jsonify({'error': 'Not found'}), 404)
+    def __init__(self, login_user, password_user, time_registration):
+        self.login_user = login_user
+        self.password_user = password_user
+        self.time_registration = time_registration
 
 
 @app.route('/')
-def hello_world():
-    return 'hello, world'
+def index():
+    if 'username' in session:
+        return f'Logged in as {session["username"]}'
+    return render_template('login.html')
 
 
-@app.route('/todo/api/v1.0/tasks', methods=['GET'])
-def get_tasks():
-    return jsonify({'tasks': tasks})
+@app.route('/login', methods=['POST', 'GET'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        session['username'] = username
+        session['password'] = password
+        hash_password = str(hashlib.md5(password.encode()).digest())
+        check_user = Authorization.query.filter_by(login_user=username).first()
+        if check_user is None:
+            return f'User named {username} not registered.'
+        else:
+            if check_user.login_user == username and check_user.password_user == hash_password:
+                return redirect('/authorization')
+            else:
+                return 'Incorrect login or password!'
+    return render_template('login.html')
 
 
-@app.route('/todo/api/v1.0/tasks/<int:task_id>', methods=['GET'])
-def get_task_by_id(task_id):
-    valid_task = [task for task in tasks if task['id'] == task_id]
-    if len(valid_task) == 0:
-        abort(404)
-    return jsonify({'tasks': valid_task})
+@app.route('/authorization', methods=['POST', 'GET'])
+def authorization():
+    return render_template('authorization.html')
 
 
-@app.route('/todo/api/v1.0/tasks', methods=['POST'])
-def create_task():
-    task = request.json
-    new_task = {
-        'id': task['id'],
-        'title': task['title'],
-        'description': task['description'],
-        'done': task['done']
-    }
-    tasks.append(new_task)
-    return make_response(jsonify(new_task), 200)
+@app.route('/registration', methods=['POST', 'GET'])
+def registration():
+    if request.method == 'POST':
+        new_username = request.form['new_username']
+        password_1 = request.form['password_1']
+        password_2 = request.form['password_2']
+        session['username'] = new_username
+        if len(new_username) in range(4, 15) and len(password_1) in range(4, 15):
+            new_user_check = Authorization.query.filter_by(login_user=new_username).first()
+            if new_user_check is None and password_1 == password_2:
+                hash_password = str(hashlib.md5(password_1.encode()).digest())
+                time_reg = datetime.now()
+                new_user = Authorization(new_username, hash_password, time_reg)
+                db.session.add(new_user)
+                db.session.commit()
+                return redirect('/authorization')
+            else:
+                return redirect('/registration')
+        else:
+            return 'Form fields are filled incorrectly.'
+    return render_template('registration.html')
 
 
-@app.route('/todo/api/v1.0/tasks/<int:task_id>', methods=['DELETE'])
-def remove_task(task_id):
-    global tasks
-    tasks = [task for task in tasks if task['id'] != task_id]
-    return make_response(jsonify({}), 200)
-
-
-@app.route('/todo/api/v1.0/tasks/<int:task_id>', methods=['PUT'])
-def update_task(task_id):
-    for task in tasks:
-        if task_id == task['id']:
-            task['description'] = request.json['description']
-            task['title'] = request.json['title']
-            task['done'] = request.json['done']
-            task['id'] = request.json['id']
-    return make_response(jsonify({}), 200)
+@app.route('/logout')
+def logout():
+    session.pop('username', None)
+    return render_template('login.html')
 
 
 if __name__ == '__main__':
+    db.create_all()
     app.run(debug=True)
